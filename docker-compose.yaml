@@ -1,0 +1,16 @@
+services:
+  bff_mobile:
+    build: 
+      context: .
+    ports:
+      - "8000:8000"
+    environment:
+      - PORT=8000
+      - SECRET_KEY=clave_super_secreta
+      - ROOMS_SERVICE_URL=http://host.docker.internal:8004
+      - INVENTORY_SERVICE_URL=http://host.docker.internal:8003
+      - STATS_SERVICE_URL=http://host.docker.internal:8002
+      - AUTH_SERVICE_URL=http://host.docker.internal:8001
+      
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
