@@ -6,38 +6,76 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
-const PORT = 8006;
+const PORT = process.env.PORT || 8000;
+
+// ====================================================
+// 🎛️ INTERRUPTOR DE MODO DE PRUEBA (PARA EL PROFESOR)
+// ====================================================
+// Cambia a true para simular datos, o a false para conectar la app real de tu equipo
+const MODO_MOCK = false; 
 
 // ⚡ MAPA DE PUERTOS REALES SEGÚN TU DOCKER PS
-const DOCKER_AUTH_MS = 'http://localhost:8001'; 
-const DOCKER_STATS_MS = 'http://localhost:8002';
-const DOCKER_ROOMS_MS = 'http://localhost:8004';
+const DOCKER_AUTH_MS = process.env.AUTH_SERVICE_URL || 'http://localhost:8001'; 
+const DOCKER_STATS_MS = process.env.STATS_SERVICE_URL || 'http://localhost:8002';
+const DOCKER_ROOMS_MS = process.env.ROOMS_SERVICE_URL || 'http://localhost:8004';
 
 console.log("====================================================");
-console.log(" 🛡️  BFF FocusAdmin - CONECTADO A MICROSERVICIOS REALES");
+console.log(` 🛡️  BFF FocusAdmin - MODO INTELIGENTE [${MODO_MOCK ? 'PRUEBA SIMULADA' : 'CONEXIÓN REAL'}]`);
 console.log(` ⚙️  Escuchando peticiones de React en: http://localhost:${PORT}`);
 console.log("====================================================");
 
 // ====================================================
-// 1. ENDPOINT: LOGIN DE ADMINISTRADOR
+// 📦 COLECCIÓN DE DATOS FALSOS (MOCKS)
 // ====================================================
-// ====================================================
-// 1. ENDPOINT: LOGIN DE ADMINISTRADOR BLINDADO
-// ====================================================
+const mockKPIs = [
+  { title: "Sesiones Monitoreadas", value: "32", detail: "Total histórico en BD" },
+  { title: "Tiempo Promedio Focus", value: "45 min", detail: "Por bloque de estudio" },
+  { title: "Atención Media Global", value: "82.5%", detail: "Rendimiento real acumulado" }
+];
+
+const mockChart = [
+  { hora: "09:00", alumnos: 4, atencionMedia: 75 },
+  { hora: "11:00", alumnos: 12, atencionMedia: 85 },
+  { hora: "13:00", alumnos: 8, atencionMedia: 80 },
+  { hora: "15:00", alumnos: 15, atencionMedia: 88 },
+  { hora: "17:00", alumnos: 9, atencionMedia: 82 }
+];
+
+const mockRooms = [
+  { id: 1, name: "Sala de Estudio Alfa", host: "jose18042006@gmail.com", participants: 5, status: "Enfoque Estable", avgFocus: "88%" },
+  { id: 2, name: "Laboratorio Computación Beta", host: "profe_evaluador@focus.cl", participants: 12, status: "Distracción Detectada", avgFocus: "64%" },
+  { id: 3, name: "Mesa de Trabajo Grupal C", host: "alumno_test@focus.cl", participants: 3, status: "Enfoque Estable", avgFocus: "91%" }
+];
+
+const mockUsers = [
+  { id: "1", email: "admin@focus.cl", name: "José Admin", role: "administrador" },
+  { id: "2", email: "estudiante@focus.cl", name: "Juan Alumno", role: "estudiante" }
+];
+
 // ====================================================
 // 1. ENDPOINT: LOGIN DE ADMINISTRADOR BLINDADO
 // ====================================================
 app.post('/api/v1/auth/login', async (req, res) => {
-  try {
-    // CORREGIDO: Usamos la variable real definida arriba (DOCKER_AUTH_MS)
-    const urlLogin = `${DOCKER_AUTH_MS}/api/v1/auth/login`;
-    console.log(`\n➡️  BFF: Intento de Login para: ${req.body.email}`);
+  const { email, password } = req.body;
+  console.log(`\n➡️  BFF: Intento de Login para: ${email}`);
 
-    // 1. Autenticamos contra Litestar
+  // 🔮 INTERCEPCIÓN MOCK
+  if (MODO_MOCK) {
+    if (email.toLowerCase() === 'admin@focus.cl' || password) {
+      console.log(`🔑 BFF [MOCK] ACCESO CONCEDIDO: ${email} simulado como Administrador.`);
+      return res.json({ token: "jwt_token_falso_modo_prueba_profe" });
+    }
+    return res.status(401).json({ error: "Credenciales inválidas en simulador" });
+  }
+
+  // 🔌 CÓDIGO REAL DE TU EQUIPO
+  try {
+    const urlLogin = `${DOCKER_AUTH_MS}/api/v1/auth/login`;
+
     const responseAuth = await fetch(urlLogin, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email: req.body.email, password: req.body.password })
+      body: JSON.stringify({ email: email, password: password })
     });
 
     const dataAuth = await responseAuth.json().catch(() => ({}));
@@ -45,24 +83,20 @@ app.post('/api/v1/auth/login', async (req, res) => {
 
     const token = dataAuth.access_token || dataAuth.token;
 
-    // 2. 🚨 CAPA DE SEGURIDAD ESTRICTA: Consultamos la lista de usuarios reales para validar el rol
     const responseAllUsers = await fetch(`${DOCKER_AUTH_MS}/api/v1/users`, {
       method: 'GET',
       headers: { 'Authorization': `Bearer ${token}` }
     });
     
     const usersList = await responseAllUsers.json().catch(() => []);
-    
-    // Buscamos al usuario que está intentando ingresar
-    const usuarioLogueado = usersList.find(u => u.email.toLowerCase() === req.body.email.toLowerCase());
+    const usuarioLogueado = usersList.find(u => u.email.toLowerCase() === email.toLowerCase());
 
-    // 3. Bloqueamos el paso si no existe o si su rol no es exactamente "administrador"
     if (!usuarioLogueado || usuarioLogueado.role !== 'administrador') {
-      console.log(`🚨 BFF BLOQUEO: Acceso denegado para ${req.body.email}. Rol detectado: ${usuarioLogueado ? usuarioLogueado.role : 'ninguno'}`);
+      console.log(`🚨 BFF BLOQUEO: Acceso denegado para ${email}. Rol detectado: ${usuarioLogueado ? usuarioLogueado.role : 'ninguno'}`);
       return res.status(403).json({ error: 'Acceso denegado. Este panel es exclusivo para el rol ADMINISTRADOR.' });
     }
 
-    console.log(`🔑 BFF ACCESO CONCEDIDO: ${req.body.email} es Administrador.`);
+    console.log(`🔑 BFF ACCESO CONCEDIDO: ${email} es Administrador.`);
     res.json({ token: token });
 
   } catch (error) {
@@ -75,6 +109,10 @@ app.post('/api/v1/auth/login', async (req, res) => {
 // 2. ENDPOINT: REGISTRO / CREACIÓN DE USUARIOS
 // ====================================================
 app.post('/api/v1/auth/register', async (req, res) => {
+  if (MODO_MOCK) {
+    return res.json({ message: "Usuario creado exitosamente (Simulado)", user: req.body });
+  }
+
   try {
     const response = await fetch(`${DOCKER_AUTH_MS}/api/v1/auth/register`, {
       method: 'POST',
@@ -94,6 +132,8 @@ app.post('/api/v1/auth/register', async (req, res) => {
 // 3. ENDPOINT: LISTAR TODOS LOS USUARIOS (GET)
 // ====================================================
 app.get('/api/users', async (req, res) => {
+  if (MODO_MOCK) return res.json(mockUsers);
+
   try {
     const response = await fetch(`${DOCKER_AUTH_MS}/api/v1/users`, {
       method: 'GET',
@@ -115,6 +155,8 @@ app.get('/api/users', async (req, res) => {
 // 4. ENDPOINT: MODIFICACIÓN INTEGRAL DE CUENTAS (PATCH)
 // ====================================================
 app.patch('/api/users/:id', async (req, res) => {
+  if (MODO_MOCK) return res.json({ success: true, message: "Usuario modificado (Simulado)" });
+
   try {
     const { id } = req.params;
     const response = await fetch(`${DOCKER_AUTH_MS}/api/v1/users/${id}`, {
@@ -138,6 +180,8 @@ app.patch('/api/users/:id', async (req, res) => {
 // 5. ENDPOINT: ELIMINACIÓN DE USUARIOS REALES (DELETE)
 // ====================================================
 app.delete('/api/users/:id', async (req, res) => {
+  if (MODO_MOCK) return res.json({ success: true, message: "Usuario eliminado (Simulado)" });
+
   try {
     const { id } = req.params;
     const response = await fetch(`${DOCKER_AUTH_MS}/api/v1/users/${id}`, {
@@ -153,26 +197,26 @@ app.delete('/api/users/:id', async (req, res) => {
   }
 });
 
-
 // ====================================================
 // 📊 6. ENDPOINT INTEGRADO: METRICAS KPIS REALES (GET)
 // ====================================================
 app.get('/api/stats/summary', async (req, res) => {
+  if (MODO_MOCK) {
+    console.log("🔮 BFF [MOCK]: Retornando KPIs de prueba para el Dashboard.");
+    return res.json(mockKPIs);
+  }
+
   try {
     console.log("➡️  BFF: Consultando reportes reales al ms_stats...");
-    
     const response = await fetch(`${DOCKER_STATS_MS}/api/v1/sessions/reports?limit=100`, {
       method: 'GET',
       headers: { 'Authorization': req.headers.authorization || '' }
     });
 
     const data = await response.json().catch(() => ({}));
-    
-    // Extraemos la lista de reportes (si viene envuelto en un objeto o directo como array)
     const reports = Array.isArray(data) ? data : (data.reports || []);
 
     if (reports.length === 0) {
-      // Data inicial por si la base de datos está recién creada y vacía
       return res.json([
         { title: "Sesiones Monitoreadas", value: "0", detail: "Sin registros aún" },
         { title: "Tiempo Promedio Focus", value: "0 min", detail: "Esperando alumnos" },
@@ -180,7 +224,6 @@ app.get('/api/stats/summary', async (req, res) => {
       ]);
     }
 
-    // Procesamiento matemático real de las sesiones guardadas de los alumnos
     const totalSesiones = reports.length;
     let sumaTiempo = 0;
     let sumaAtencion = 0;
@@ -205,11 +248,15 @@ app.get('/api/stats/summary', async (req, res) => {
   }
 });
 
-
 // ====================================================
 // 📈 7. ENDPOINT INTEGRADO: GRÁFICO REAL DESDE BD (GET)
 // ====================================================
 app.get('/api/stats/chart', async (req, res) => {
+  if (MODO_MOCK) {
+    console.log("🔮 BFF [MOCK]: Retornando puntos del gráfico.");
+    return res.json(mockChart);
+  }
+
   try {
     const response = await fetch(`${DOCKER_STATS_MS}/api/v1/sessions/reports?limit=50`, {
       method: 'GET',
@@ -220,14 +267,10 @@ app.get('/api/stats/chart', async (req, res) => {
     const reports = Array.isArray(data) ? data : (data.reports || []);
 
     if (reports.length === 0) {
-      return res.json([
-        { hora: "Sin Datos", alumnos: 0, atencionMedia: 0 }
-      ]);
+      return res.json([{ hora: "Sin Datos", alumnos: 0, atencionMedia: 0 }]);
     }
 
-    // Mapeamos los reportes reales para armar las coordenadas del gráfico de áreas
     const chartData = reports.map((session, index) => {
-      // Extraemos o formateamos la hora del registro
       let horaFormateada = `Bloque ${index + 1}`;
       if (session.created_at || session.start_time) {
         const fecha = new Date(session.created_at || session.start_time);
@@ -238,12 +281,11 @@ app.get('/api/stats/chart', async (req, res) => {
 
       return {
         hora: horaFormateada,
-        alumnos: session.participants_count || session.total_users || 1, // Usuarios en la sesión
+        alumnos: session.participants_count || session.total_users || 1,
         atencionMedia: Math.round(parseFloat(session.avg_focus_score || session.focus_score || 80))
       };
     });
 
-    // Lo ordenamos cronológicamente si es necesario y respondemos a Recharts
     res.json(chartData.reverse().slice(-10)); 
 
   } catch (error) {
@@ -252,14 +294,17 @@ app.get('/api/stats/chart', async (req, res) => {
   }
 });
 
-
 // ====================================================
 // 📡 8. ENDPOINT INTEGRADO: MONITOREO DE SALAS REALES (GET)
 // ====================================================
 app.get('/api/rooms', async (req, res) => {
+  if (MODO_MOCK) {
+    console.log("🔮 BFF [MOCK]: Enviando estado de salas simuladas.");
+    return res.json(mockRooms);
+  }
+
   try {
     console.log("➡️  BFF: Solicitando salas activas al ms_rooms...");
-    
     const response = await fetch(`${DOCKER_ROOMS_MS}/api/v1/rooms`, {
       method: 'GET',
       headers: {
@@ -271,7 +316,6 @@ app.get('/api/rooms', async (req, res) => {
     const data = await response.json().catch(() => []);
     if (!response.ok) return res.status(response.status).json(data);
 
-    // Mapeamos los campos del backend de salas móviles al formato que lee tu componente RoomMonitor.jsx
     const mappedRooms = data.map(room => ({
       id: room.id,
       name: room.name || room.titulo || "Sala de Estudio Focus",
@@ -288,7 +332,6 @@ app.get('/api/rooms', async (req, res) => {
     res.status(500).json({ error: 'No se pudo conectar con el microservicio de salas' });
   }
 });
-
 
 app.listen(PORT, '0.0.0.0', () => {
   console.log(`🚀 Servidor Express escuchando en el puerto ${PORT}`);

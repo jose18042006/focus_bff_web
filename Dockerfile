@@ -1,17 +1,21 @@
-FROM python:3.13-slim
+# 🟢 Usamos la versión oficial de Node.js ligera
+FROM node:20-slim
 
-ENV PYTHONDONTWRITEBYTECODE=1
-ENV PYTHONUNBUFFERED=1
-
+# Definimos el directorio de trabajo dentro del contenedor
 WORKDIR /app
 
-COPY requirements.txt .
+# Copiamos los archivos de dependencias de Node
+COPY package*.json ./
 
-RUN pip install --no-cache-dir -r requirements.txt
+# Instalamos los módulos de Node (limpio y rápido para producción)
+RUN npm ci --only=production
 
+# Copiamos todo el código del BFF a la carpeta del contenedor
 COPY . .
 
+# Exponemos el puerto 8000 interno que configuramos en el docker-compose
 ENV PORT=8000
-EXPOSE $PORT
+EXPOSE 8000
 
-CMD ["sh", "-c", "litestar run --host 0.0.0.0 --port $PORT"]
+# 🚀 EL COMANDO MÁGICO: Arranca automáticamente tu bff-server.js
+CMD ["node", "bff-server.js"]
